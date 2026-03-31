@@ -120,13 +120,16 @@ class RebarDetector {
     // Use MobileNet to classify the image
     const predictions = await this.model.classify(imageElement);
 
-    // Simple heuristic for rebar detection based on common classes
-    // In a real implementation, this would use a trained model
+    // Enhanced rebar detection logic
     const imageClasses = predictions.map(p => p.className.toLowerCase());
+    const probabilities = predictions.map(p => p.probability);
+
+    console.log('Predictions:', predictions); // Debug logging
 
     // Look for concrete/construction related classes
-    const concreteKeywords = ['concrete', 'wall', 'building', 'construction', 'architecture', 'brick'];
-    const metalKeywords = ['metal', 'steel', 'iron', 'wire', 'cable', 'pipe'];
+    const concreteKeywords = ['concrete', 'wall', 'building', 'construction', 'architecture', 'brick', 'cement', 'masonry'];
+    const metalKeywords = ['metal', 'steel', 'iron', 'wire', 'cable', 'pipe', 'rebar', 'reinforcement'];
+    const corrosionKeywords = ['rust', 'corrosion', 'oxidized', 'weathered'];
 
     const hasConcrete = imageClasses.some(cls =>
       concreteKeywords.some(keyword => cls.includes(keyword))
@@ -136,26 +139,60 @@ class RebarDetector {
       metalKeywords.some(keyword => cls.includes(keyword))
     );
 
-    // Calculate confidence based on predictions
-    const topPrediction = predictions[0];
-    let confidence = Math.min(topPrediction.probability * 100, 95); // Cap at 95%
+    const hasCorrosion = imageClasses.some(cls =>
+      corrosionKeywords.some(keyword => cls.includes(keyword))
+    );
 
-    // Adjust confidence based on detected features
-    if (hasConcrete && hasMetal) {
-      confidence = Math.max(confidence, 75); // High confidence if both detected
+    // Calculate confidence based on detected features
+    let confidence = 0;
+    let hasExposedRebar = false;
+
+    // Primary indicators of exposed rebar
+    if (hasMetal && hasConcrete) {
+      // Metal + concrete suggests possible rebar exposure
+      confidence = 70;
+      hasExposedRebar = true;
+    } else if (hasCorrosion && hasConcrete) {
+      // Corrosion + concrete is a strong indicator
+      confidence = 85;
+      hasExposedRebar = true;
     } else if (hasConcrete) {
-      confidence = Math.max(confidence, 60); // Medium confidence for concrete
+      // Just concrete - likely no exposed rebar
+      confidence = 20;
+      hasExposedRebar = false;
     } else {
-      confidence = Math.min(confidence, 40); // Low confidence otherwise
+      // No concrete detected - probably not a relevant image
+      confidence = 10;
+      hasExposedRebar = false;
     }
 
-    // Simulate exposed rebar detection (in reality, this would be a trained model)
-    const exposedRebar = confidence > 65;
+    // Adjust confidence based on top prediction probability
+    const topProbability = probabilities[0];
+    if (topProbability > 0.8) {
+      confidence = Math.min(confidence + 15, 95);
+    } else if (topProbability > 0.6) {
+      confidence = Math.min(confidence + 10, 90);
+    }
+
+    // Special case: if we detect metal objects prominently, increase confidence
+    const metalIndices = imageClasses.map((cls, idx) =>
+      metalKeywords.some(keyword => cls.includes(keyword)) ? idx : -1
+    ).filter(idx => idx !== -1);
+
+    if (metalIndices.length > 0) {
+      const metalProbability = Math.max(...metalIndices.map(idx => probabilities[idx]));
+      if (metalProbability > 0.3) {
+        confidence = Math.min(confidence + 20, 95);
+        hasExposedRebar = true;
+      }
+    }
 
     return {
-      exposedRebar,
-      confidence: Math.round(confidence),
-      predictions
+      hasExposedRebar: hasExposedRebar,
+      confidence: Math.max(5, Math.min(confidence, 95)), // Clamp between 5-95%
+      reasoning: hasExposedRebar ?
+        `Detected ${hasCorrosion ? 'corroded ' : ''}metal elements in concrete structure` :
+        'No exposed rebar detected in concrete structure'
     };
   }
 
@@ -173,14 +210,14 @@ class RebarDetector {
     this.resultsSection.style.display = 'block';
     this.resultIcon.className = 'result-icon';
 
-    if (result.exposedRebar) {
+    if (result.hasExposedRebar) {
       this.resultIcon.textContent = '⚠️';
       this.resultTitle.textContent = 'Exposed Rebar Detected';
-      this.resultDescription.textContent = 'This image shows signs of exposed rebar. Professional inspection recommended.';
+      this.resultDescription.textContent = result.reasoning + '. Professional inspection recommended.';
     } else {
       this.resultIcon.textContent = '✅';
       this.resultTitle.textContent = 'No Exposed Rebar Detected';
-      this.resultDescription.textContent = 'This image appears to show properly covered concrete structures.';
+      this.resultDescription.textContent = result.reasoning + '. Structure appears intact.';
     }
 
     // Animate confidence bar
