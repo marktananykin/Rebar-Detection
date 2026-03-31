@@ -183,48 +183,107 @@ class RebarDetector {
 
     console.log('MobileNet predictions:', predictions);
 
-    const concreteKeywords = ['concrete', 'wall', 'building', 'construction', 'architecture', 'brick', 'cement', 'masonry'];
-    const metalKeywords = ['metal', 'steel', 'iron', 'wire', 'cable', 'pipe', 'rebar', 'reinforcement'];
-    const corrosionKeywords = ['rust', 'corrosion', 'oxidized', 'weathered'];
+    // Enhanced keyword sets for better rebar detection
+    const concreteKeywords = [
+      'concrete', 'wall', 'building', 'construction', 'architecture', 'brick', 'cement',
+      'masonry', 'stone', 'plaster', 'stucco', 'mortar', 'beam', 'column', 'slab'
+    ];
 
-    const hasConcrete = imageClasses.some(cls => concreteKeywords.some(keyword => cls.includes(keyword)));
-    const hasMetal = imageClasses.some(cls => metalKeywords.some(keyword => cls.includes(keyword)));
-    const hasCorrosion = imageClasses.some(cls => corrosionKeywords.some(keyword => cls.includes(keyword)));
+    const metalKeywords = [
+      'metal', 'steel', 'iron', 'wire', 'cable', 'pipe', 'rebar', 'reinforcement',
+      'bar', 'rod', 'girder', 'beam', 'structural', 'framework'
+    ];
 
+    const corrosionKeywords = [
+      'rust', 'corrosion', 'oxidized', 'weathered', 'rusted', 'deteriorated',
+      'worn', 'aged', 'patina', 'tarnished'
+    ];
+
+    const constructionKeywords = [
+      'industrial', 'factory', 'warehouse', 'bridge', 'highway', 'infrastructure',
+      'engineering', 'civil', 'structural'
+    ];
+
+    // Analyze predictions
+    const hasConcrete = imageClasses.some(cls =>
+      concreteKeywords.some(keyword => cls.includes(keyword))
+    );
+    const hasMetal = imageClasses.some(cls =>
+      metalKeywords.some(keyword => cls.includes(keyword))
+    );
+    const hasCorrosion = imageClasses.some(cls =>
+      corrosionKeywords.some(keyword => cls.includes(keyword))
+    );
+    const hasConstruction = imageClasses.some(cls =>
+      constructionKeywords.some(keyword => cls.includes(keyword))
+    );
+
+    // Get confidence scores for relevant classes
+    const concreteScore = Math.max(...imageClasses.map((cls, idx) =>
+      concreteKeywords.some(keyword => cls.includes(keyword)) ? probabilities[idx] : 0
+    ));
+
+    const metalScore = Math.max(...imageClasses.map((cls, idx) =>
+      metalKeywords.some(keyword => cls.includes(keyword)) ? probabilities[idx] : 0
+    ));
+
+    const corrosionScore = Math.max(...imageClasses.map((cls, idx) =>
+      corrosionKeywords.some(keyword => cls.includes(keyword)) ? probabilities[idx] : 0
+    ));
+
+    // Advanced detection logic
     let confidence = 0;
     let hasExposedRebar = false;
+    let reasoning = '';
 
-    if (hasMetal && hasConcrete) {
-      confidence = 70;
+    // High confidence: Corrosion + Concrete (strongest indicator of exposed rebar)
+    if (hasCorrosion && hasConcrete && corrosionScore > 0.1) {
+      confidence = Math.min(95, 70 + (corrosionScore * 100) * 0.3);
       hasExposedRebar = true;
-    } else if (hasCorrosion && hasConcrete) {
-      confidence = 85;
+      reasoning = 'Detected corrosion on concrete surface - strong indicator of exposed rebar';
+    }
+    // Medium-high confidence: Metal + Concrete + Construction context
+    else if (hasMetal && hasConcrete && (hasConstruction || metalScore > 0.2)) {
+      confidence = Math.min(85, 60 + (metalScore * 100) * 0.4);
       hasExposedRebar = true;
-    } else if (hasConcrete) {
-      confidence = 25;
+      reasoning = 'Detected metal elements in concrete construction context';
+    }
+    // Medium confidence: Just metal in construction setting
+    else if (hasMetal && hasConstruction) {
+      confidence = Math.min(75, 50 + (metalScore * 100) * 0.5);
+      hasExposedRebar = true;
+      reasoning = 'Detected metal in construction/industrial setting';
+    }
+    // Low confidence: Only concrete detected
+    else if (hasConcrete) {
+      confidence = Math.max(20, concreteScore * 100 * 0.3);
       hasExposedRebar = false;
-    } else {
+      reasoning = 'Concrete structure detected but no exposed rebar visible';
+    }
+    // Very low confidence: No relevant features
+    else {
       confidence = 10;
       hasExposedRebar = false;
+      reasoning = 'No concrete or construction elements detected';
     }
 
-    const topProbability = probabilities[0] || 0;
-    if (topProbability > 0.8) confidence = Math.min(confidence + 15, 95);
-    else if (topProbability > 0.6) confidence = Math.min(confidence + 10, 90);
+    // Boost confidence if top prediction is very confident
+    const topProbability = Math.max(...probabilities);
+    if (topProbability > 0.8) {
+      confidence = Math.min(confidence + 10, 95);
+    }
 
-    const metalIndices = imageClasses.map((cls, idx) => (metalKeywords.some(keyword => cls.includes(keyword)) ? idx : -1)).filter(idx => idx !== -1);
-    if (metalIndices.length > 0) {
-      const metalProbability = Math.max(...metalIndices.map(idx => probabilities[idx]));
-      if (metalProbability > 0.3) {
-        confidence = Math.min(confidence + 20, 95);
-        hasExposedRebar = true;
-      }
+    // Additional check: if metal is detected with reasonable confidence
+    if (hasMetal && metalScore > 0.15 && !hasExposedRebar) {
+      confidence = Math.min(confidence + 15, 80);
+      hasExposedRebar = true;
+      reasoning = 'Metal detected - possible exposed rebar';
     }
 
     return {
       hasExposedRebar,
-      confidence: Math.max(5, Math.min(confidence, 95)),
-      reasoning: hasExposedRebar ? 'Detected metal/corrosion signals in concrete structure' : 'No exposed rebar detected'
+      confidence: Math.max(5, Math.min(Math.round(confidence), 95)),
+      reasoning
     };
   }
 
