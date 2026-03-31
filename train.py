@@ -1,53 +1,46 @@
 import argparse
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader
 from model import RebarDetectionModel
-from data_loader import get_data_loaders
 import os
 
-def train_model(model, train_loader, criterion, optimizer, device, epochs):
-    model.train()
-    for epoch in range(epochs):
-        running_loss = 0.0
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
+def main(data_path, epochs, model_checkpoint):
+    # Initialize YOLOv8 model
+    model = RebarDetectionModel('yolov8n.pt')
 
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+    # Create data.yaml file for YOLO training
+    data_yaml = os.path.join(data_path, 'data.yaml')
+    if not os.path.exists(data_yaml):
+        # Create basic data.yaml if it doesn't exist
+        with open(data_yaml, 'w') as f:
+            f.write(f"""
+train: {data_path}/train/images
+val: {data_path}/test/images
 
-            running_loss += loss.item()
+nc: 1  # number of classes
+names: ['rebar']  # class names
+""")
 
-        print(f'Epoch {epoch+1}/{epochs}, Loss: {running_loss/len(train_loader):.4f}')
+    # Train the model
+    print(f"Training YOLOv8 model for {epochs} epochs...")
+    model.train(data_yaml, epochs=epochs, imgsz=640)
 
-def evaluate_model(model, test_loader, device):
-    model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for images, labels in test_loader:
-            images, labels = images.to(device), labels.to(device)
-            outputs = model(images)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+    # Save the trained model
+    if model_checkpoint:
+        model.model.save(model_checkpoint)
+        print(f"Model saved to {model_checkpoint}")
 
-    accuracy = 100 * correct / total
-    print(f'Accuracy on test set: {accuracy:.2f}%')
-    return accuracy
+        # Export to ONNX for web deployment
+        onnx_path = model_checkpoint.replace('.pt', '.onnx')
+        model.export_onnx(onnx_path)
+        print(f"ONNX model exported to {onnx_path}")
 
-def main(data_path, epochs, batch_size, learning_rate, model_checkpoint):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f'Using device: {device}')
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Train Rebar Detection Model')
+    parser.add_argument('--data-path', type=str, required=True, help='Path to the dataset directory')
+    parser.add_argument('--epochs', type=int, default=50, help='Number of training epochs')
+    parser.add_argument('--model-checkpoint', type=str, default='rebar_model.pt', help='Path to save the trained model')
 
-    # Get data loaders
-    train_loader, test_loader = get_data_loaders(data_path, batch_size)
-
-    # Initialize model
+    args = parser.parse_args()
+    main(args.data_path, args.epochs, args.model_checkpoint)
     model = RebarDetectionModel(num_classes=2).to(device)
 
     # Loss and optimizer

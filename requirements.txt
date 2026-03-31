@@ -10,3 +10,4 @@ python-multipart
 tqdm
 requests
 roboflow
+ultralytics

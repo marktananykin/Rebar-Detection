@@ -1,23 +1,43 @@
-import torch
-import torch.nn as nn
-import torchvision.models as models
+from ultralytics import YOLO
 
-class RebarDetectionModel(nn.Module):
-    def __init__(self, num_classes=2, pretrained=True):
-        super(RebarDetectionModel, self).__init__()
+class RebarDetectionModel:
+    def __init__(self, model_path='yolov8n.pt'):
+        # Load YOLOv8 model (nano version for speed)
+        self.model = YOLO(model_path)
 
-        # Use pretrained ResNet backbone for better generalized feature extraction
-        self.backbone = models.resnet18(pretrained=pretrained)
+    def predict(self, image_path, conf=0.25):
+        """
+        Predict rebar exposure in image
+        Returns: dict with 'has_exposed_rebar' (bool) and 'confidence' (float)
+        """
+        results = self.model(image_path, conf=conf)
 
-        # Replace the final classification layer
-        in_features = self.backbone.fc.in_features
-        self.backbone.fc = nn.Sequential(
-            nn.Dropout(0.5),
-            nn.Linear(in_features, 256),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.4),
-            nn.Linear(256, num_classes)
-        )
+        # Check if any rebar objects detected
+        has_rebar = False
+        max_conf = 0.0
 
-    def forward(self, x):
-        return self.backbone(x)
+        for result in results:
+            boxes = result.boxes
+            if boxes is not None:
+                for box in boxes:
+                    cls = int(box.cls.item())
+                    conf_val = box.conf.item()
+
+                    # Assuming class 0 is 'rebar' or similar
+                    # You may need to adjust based on your trained model
+                    if cls == 0 and conf_val > 0.5:  # rebar class
+                        has_rebar = True
+                        max_conf = max(max_conf, conf_val)
+
+        return {
+            'has_exposed_rebar': has_rebar,
+            'confidence': max_conf if has_rebar else 0.0
+        }
+
+    def train(self, data_yaml, epochs=50, imgsz=640):
+        """Train the model"""
+        self.model.train(data=data_yaml, epochs=epochs, imgsz=imgsz)
+
+    def export_onnx(self, output_path='model.onnx'):
+        """Export model to ONNX for web deployment"""
+        self.model.export(format='onnx', dynamic=True)
