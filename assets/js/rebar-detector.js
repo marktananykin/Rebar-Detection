@@ -5,6 +5,12 @@ class RebarDetector {
     this.isModelLoaded = false;
     this.modelPath = '/models/rebar_model.onnx'; // Path to ONNX model
 
+    // Use Roboflow as first-choice detection (more accurate for your dataset)
+    this.roboflowApiKey = window.ROBOFLOW_API_KEY || '';
+    this.roboflowWorkspace = window.ROBOFLOW_WORKSPACE || 'marks-workspace-dymtv';
+    this.roboflowWorkflow = window.ROBOFLOW_WORKFLOW || 'general-segmentation-api';
+    this.roboflowEndpoint = `https://serverless.roboflow.com/${this.roboflowWorkspace}/${this.roboflowWorkflow}`;
+
     this.initializeElements();
     this.setupEventListeners();
     this.loadModel();
@@ -98,7 +104,15 @@ class RebarDetector {
 
     try {
       let result;
-      if (this.isModelLoaded && !this.fallbackMode) {
+
+      if (this.roboflowApiKey) {
+        result = await this.detectWithRoboflow(this.selectedFile);
+        // If Roboflow gives no exposed rebar and confidence is low, fallback to local model
+        if (!result.hasExposedRebar && result.confidence < 0.45 && this.isModelLoaded && !this.fallbackMode) {
+          result = await this.detectWithONNX(this.selectedFile);
+          result.method += ' (fallback check)';
+        }
+      } else if (this.isModelLoaded && !this.fallbackMode) {
         result = await this.detectWithONNX(this.selectedFile);
       } else {
         result = await this.detectWithRoboflow(this.selectedFile);
@@ -119,72 +133,106 @@ class RebarDetector {
     const img = new Image();
     img.src = URL.createObjectURL(file);
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       img.onload = async () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = 640;
-        canvas.height = 640;
+        try {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = 640;
+          canvas.height = 640;
 
-        // Center crop/resize
-        const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
-        const x = (canvas.width - img.width * scale) / 2;
-        const y = (canvas.height - img.height * scale) / 2;
+          // Center fit the image into 640x640
+          const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+          const x = (canvas.width - img.width * scale) / 2;
+          const y = (canvas.height - img.height * scale) / 2;
 
-        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
 
-        // Get image data
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const { data, width, height } = imageData;
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const { data, width, height } = imageData;
 
-        // Convert to tensor
-        const input = new Float32Array(width * height * 3);
-        for (let i = 0; i < width * height; i++) {
-          input[i * 3] = data[i * 4] / 255.0;     // R
-          input[i * 3 + 1] = data[i * 4 + 1] / 255.0; // G
-          input[i * 3 + 2] = data[i * 4 + 2] / 255.0; // B
-        }
-
-        const tensor = new ort.Tensor('float32', input, [1, 3, height, width]);
-
-        // Run inference
-        const feeds = { images: tensor };
-        const results = await this.session.run(feeds);
-
-        // Process results (simplified - assuming single class 'rebar')
-        const output = results['output0']; // Adjust based on your model
-        const data = output.data;
-
-        let maxConf = 0;
-        let hasRebar = false;
-
-        // Parse YOLOv8 output (simplified)
-        for (let i = 0; i < data.length; i += 6) { // [x,y,w,h,conf,class]
-          const conf = data[i + 4];
-          const cls = data[i + 5];
-
-          if (cls === 0 && conf > 0.5) { // rebar class
-            hasRebar = true;
-            maxConf = Math.max(maxConf, conf);
+          const input = new Float32Array(1 * 3 * height * width);
+          for (let i = 0; i < width * height; i++) {
+            input[i] = data[i * 4] / 255.0;       // R
+            input[i + width * height] = data[i * 4 + 1] / 255.0; // G
+            input[i + 2 * width * height] = data[i * 4 + 2] / 255.0; // B
           }
-        }
 
-        resolve({
-          hasExposedRebar: hasRebar,
-          confidence: maxConf,
-          method: 'YOLOv8 ONNX'
-        });
+          const tensor = new ort.Tensor('float32', input, [1, 3, height, width]);
+          const feed = { images: tensor };
+          const outputs = await this.session.run(feed);
+
+          const firstKey = Object.keys(outputs)[0];
+          const outputTensor = outputs[firstKey];
+          const outData = outputTensor.data;
+          const outShape = outputTensor.dims;
+
+          let maxConf = 0;
+          let hasRebar = false;
+
+          if (outShape.length === 3 && outShape[2] >= 6) {
+            const numDet = outShape[1];
+            const charLen = outShape[2];
+
+            for (let i = 0; i < numDet; i++) {
+              const base = i * charLen;
+
+              const objConf = outData[base + 4];
+              let classIndex = 0;
+              let classConf = 0;
+
+              if (charLen === 6) {
+                classIndex = Math.round(outData[base + 5]);
+                classConf = 1.0;
+              } else {
+                // class scores are at 5..
+                for (let c = 5; c < charLen; c++) {
+                  const score = outData[base + c];
+                  if (score > classConf) {
+                    classConf = score;
+                    classIndex = c - 5;
+                  }
+                }
+              }
+
+              const confidence = objConf * classConf;
+              if (classIndex === 0 && confidence > 0.3) {
+                hasRebar = true;
+                maxConf = Math.max(maxConf, confidence);
+              }
+            }
+          } else {
+            // If output format is not expected, fallback to 0.5/0.5
+            maxConf = 0.5;
+            hasRebar = false;
+          }
+
+          resolve({
+            hasExposedRebar: hasRebar,
+            confidence: maxConf,
+            method: 'YOLOv8 ONNX'
+          });
+        } catch (err) {
+          reject(err);
+        }
       };
+
+      img.onerror = (err) => reject(err);
     });
   }
 
   async detectWithRoboflow(file) {
-    // Fallback to Roboflow API
+    if (!this.roboflowApiKey) {
+      return this.basicDetection();
+    }
+
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-      const response = await fetch('https://detect.roboflow.com/marks-workspace-dymtv/general-segmentation-api/1', {
+      const response = await fetch(`${this.roboflowEndpoint}`, {
         method: 'POST',
         body: formData,
         headers: {
@@ -192,12 +240,32 @@ class RebarDetector {
         }
       });
 
-      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(`Roboflow HTTP ${response.status}`);
+      }
 
-      // Parse Roboflow response
-      const predictions = result.predictions || [];
-      const hasRebar = predictions.some(pred => pred.class === 'Exposed rebar' && pred.confidence > 0.5);
-      const maxConf = Math.max(...predictions.map(pred => pred.confidence), 0);
+      const data = await response.json();
+      let predictions = [];
+
+      if (data.result) {
+        if (data.result.predictions) {
+          predictions = data.result.predictions;
+        } else if (data.result.segmentation) {
+          predictions = data.result.segmentation;
+        } else if (data.result.classes) {
+          predictions = Object.entries(data.result.classes).map(([name, info]) => ({ class: name, confidence: info.confidence || info }));
+        }
+      } else if (Array.isArray(data.predictions)) {
+        predictions = data.predictions;
+      }
+
+      const rebarPredictions = predictions.filter((pred) => {
+        const className = (pred.class || pred.label || '').toLowerCase();
+        return className.includes('exposed') || className.includes('rebar');
+      });
+
+      const maxConf = rebarPredictions.reduce((max, pred) => Math.max(max, pred.confidence || 0), 0);
+      const hasRebar = maxConf > 0.35;
 
       return {
         hasExposedRebar: hasRebar,
@@ -206,6 +274,9 @@ class RebarDetector {
       };
     } catch (error) {
       console.error('Roboflow API failed:', error);
+      if (this.isModelLoaded && !this.fallbackMode) {
+        return this.detectWithONNX(file);
+      }
       return this.basicDetection();
     }
   }
