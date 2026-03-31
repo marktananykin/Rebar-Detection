@@ -1,0 +1,5 @@
+torch
+fastapi
+opencv-python
+numpy
+pandas
