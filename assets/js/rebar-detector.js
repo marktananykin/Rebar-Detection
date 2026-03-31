@@ -1,15 +1,17 @@
-// Rebar Detection JavaScript using ONNX Runtime for YOLOv8
+// Rebar Detection JavaScript using ONNX Runtime + Roboflow with robust upload handling
 class RebarDetector {
   constructor() {
     this.session = null;
     this.isModelLoaded = false;
-    this.modelPath = '/models/rebar_model.onnx'; // Path to ONNX model
+    this.modelPath = '/models/rebar_model.onnx';
 
-    // Use Roboflow as first-choice detection (more accurate for your dataset)
     this.roboflowApiKey = window.ROBOFLOW_API_KEY || '';
     this.roboflowWorkspace = window.ROBOFLOW_WORKSPACE || 'marks-workspace-dymtv';
     this.roboflowWorkflow = window.ROBOFLOW_WORKFLOW || 'general-segmentation-api';
     this.roboflowEndpoint = `https://serverless.roboflow.com/${this.roboflowWorkspace}/${this.roboflowWorkflow}`;
+
+    this.selectedFile = null;
+    this.fallbackMode = false;
 
     this.initializeElements();
     this.setupEventListeners();
@@ -18,13 +20,17 @@ class RebarDetector {
 
   async loadModel() {
     try {
-      console.log('Loading YOLOv8 ONNX model...');
-      this.session = await ort.InferenceSession.create(this.modelPath);
-      this.isModelLoaded = true;
-      console.log('Model loaded successfully');
+      if (typeof ort !== 'undefined') {
+        console.log('Loading YOLOv8 ONNX model...');
+        this.session = await ort.InferenceSession.create(this.modelPath);
+        this.isModelLoaded = true;
+        console.log('Model loaded successfully');
+      } else {
+        console.warn('ONNX Runtime not available, skipping local model load.');
+        this.fallbackMode = true;
+      }
     } catch (error) {
-      console.error('Failed to load model:', error);
-      // Fallback to Roboflow or basic detection
+      console.error('Failed to load ONNX model:', error);
       this.fallbackMode = true;
     }
   }
@@ -35,7 +41,6 @@ class RebarDetector {
     this.previewSection = document.getElementById('previewSection');
     this.previewImage = document.getElementById('previewImage');
     this.resultsSection = document.getElementById('resultsSection');
-    this.resultCard = document.getElementById('resultCard');
     this.resultIcon = document.getElementById('resultIcon');
     this.resultTitle = document.getElementById('resultTitle');
     this.resultDescription = document.getElementById('resultDescription');
@@ -45,10 +50,10 @@ class RebarDetector {
   }
 
   setupEventListeners() {
-    // File input change
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
 
-    // Drag and drop
+    this.uploadArea.addEventListener('click', () => this.fileInput.click());
+
     this.uploadArea.addEventListener('dragover', (e) => {
       e.preventDefault();
       this.uploadArea.style.borderColor = '#2563eb';
@@ -62,13 +67,11 @@ class RebarDetector {
     this.uploadArea.addEventListener('drop', (e) => {
       e.preventDefault();
       this.uploadArea.style.borderColor = '#e2e8f0';
-      const files = e.dataTransfer.files;
-      if (files.length > 0) {
-        this.handleFile(files[0]);
+      if (e.dataTransfer?.files?.length > 0) {
+        this.handleFile(e.dataTransfer.files[0]);
       }
     });
 
-    // Analyze button
     this.analyzeBtn.addEventListener('click', () => this.analyzeImage());
   }
 
@@ -81,41 +84,49 @@ class RebarDetector {
 
   handleFile(file) {
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file');
+      alert('Please select a valid image file.');
       return;
     }
 
+    this.selectedFile = file;
     const reader = new FileReader();
-    reader.onload = (e) => {
-      this.previewImage.src = e.target.result;
+    reader.onload = (event) => {
+      this.previewImage.src = event.target.result;
       this.previewSection.style.display = 'block';
       this.uploadArea.style.display = 'none';
       this.resultsSection.style.display = 'none';
+      this.resultTitle.textContent = 'Ready to analyze';
+      this.resultDescription.textContent = 'Click Analyze to detect exposed rebar.';
+      this.confidenceFill.style.width = '0%';
+      this.confidencePercentage.textContent = '0%';
     };
     reader.readAsDataURL(file);
-    this.selectedFile = file;
   }
 
   async analyzeImage() {
-    if (!this.selectedFile) return;
+    if (!this.selectedFile) {
+      alert('Please upload an image first.');
+      return;
+    }
 
     this.analyzeBtn.disabled = true;
     this.analyzeBtn.textContent = '🔄 Analyzing...';
 
     try {
-      let result;
+      let result = null;
 
       if (this.roboflowApiKey) {
         result = await this.detectWithRoboflow(this.selectedFile);
-        // If Roboflow gives no exposed rebar and confidence is low, fallback to local model
-        if (!result.hasExposedRebar && result.confidence < 0.45 && this.isModelLoaded && !this.fallbackMode) {
+      }
+
+      if (!result || !result.hasExposedRebar && result.confidence < 0.35) {
+        if (this.isModelLoaded && !this.fallbackMode) {
           result = await this.detectWithONNX(this.selectedFile);
-          result.method += ' (fallback check)';
         }
-      } else if (this.isModelLoaded && !this.fallbackMode) {
-        result = await this.detectWithONNX(this.selectedFile);
-      } else {
-        result = await this.detectWithRoboflow(this.selectedFile);
+      }
+
+      if (!result) {
+        result = this.basicDetection();
       }
 
       this.displayResult(result);
@@ -129,164 +140,133 @@ class RebarDetector {
   }
 
   async detectWithONNX(file) {
-    // Preprocess image for YOLOv8
+    if (!this.session || !this.isModelLoaded) {
+      return {
+        hasExposedRebar: false,
+        confidence: 0,
+        method: 'ONNX model unavailable'
+      };
+    }
+
     const img = new Image();
     img.src = URL.createObjectURL(file);
 
-    return new Promise((resolve, reject) => {
-      img.onload = async () => {
-        try {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          canvas.width = 640;
-          canvas.height = 640;
-
-          // Center fit the image into 640x640
-          const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
-          const x = (canvas.width - img.width * scale) / 2;
-          const y = (canvas.height - img.height * scale) / 2;
-
-          ctx.fillStyle = '#000';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const { data, width, height } = imageData;
-
-          const input = new Float32Array(1 * 3 * height * width);
-          for (let i = 0; i < width * height; i++) {
-            input[i] = data[i * 4] / 255.0;       // R
-            input[i + width * height] = data[i * 4 + 1] / 255.0; // G
-            input[i + 2 * width * height] = data[i * 4 + 2] / 255.0; // B
-          }
-
-          const tensor = new ort.Tensor('float32', input, [1, 3, height, width]);
-          const feed = { images: tensor };
-          const outputs = await this.session.run(feed);
-
-          const firstKey = Object.keys(outputs)[0];
-          const outputTensor = outputs[firstKey];
-          const outData = outputTensor.data;
-          const outShape = outputTensor.dims;
-
-          let maxConf = 0;
-          let hasRebar = false;
-
-          if (outShape.length === 3 && outShape[2] >= 6) {
-            const numDet = outShape[1];
-            const charLen = outShape[2];
-
-            for (let i = 0; i < numDet; i++) {
-              const base = i * charLen;
-
-              const objConf = outData[base + 4];
-              let classIndex = 0;
-              let classConf = 0;
-
-              if (charLen === 6) {
-                classIndex = Math.round(outData[base + 5]);
-                classConf = 1.0;
-              } else {
-                // class scores are at 5..
-                for (let c = 5; c < charLen; c++) {
-                  const score = outData[base + c];
-                  if (score > classConf) {
-                    classConf = score;
-                    classIndex = c - 5;
-                  }
-                }
-              }
-
-              const confidence = objConf * classConf;
-              if (classIndex === 0 && confidence > 0.3) {
-                hasRebar = true;
-                maxConf = Math.max(maxConf, confidence);
-              }
-            }
-          } else {
-            // If output format is not expected, fallback to 0.5/0.5
-            maxConf = 0.5;
-            hasRebar = false;
-          }
-
-          resolve({
-            hasExposedRebar: hasRebar,
-            confidence: maxConf,
-            method: 'YOLOv8 ONNX'
-          });
-        } catch (err) {
-          reject(err);
-        }
-      };
-
-      img.onerror = (err) => reject(err);
+    await new Promise((r, rej) => {
+      img.onload = r;
+      img.onerror = rej;
     });
+
+    const canvas = document.createElement('canvas');
+    const size = 640;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    const scale = Math.max(size / img.width, size / img.height);
+    const x = (size - img.width * scale) / 2;
+    const y = (size - img.height * scale) / 2;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, size, size);
+    ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+
+    const imageData = ctx.getImageData(0, 0, size, size);
+    const { data } = imageData;
+    const input = new Float32Array(1 * 3 * size * size);
+
+    for (let i = 0; i < size * size; i += 1) {
+      input[i] = data[i * 4] / 255.0;
+      input[i + size * size] = data[i * 4 + 1] / 255.0;
+      input[i + (2 * size * size)] = data[i * 4 + 2] / 255.0;
+    }
+
+    const tensor = new ort.Tensor('float32', input, [1, 3, size, size]);
+    const outputs = await this.session.run({ images: tensor });
+    const firstKey = Object.keys(outputs)[0];
+    const outputTensor = outputs[firstKey];
+
+    const outData = outputTensor.data;
+    const outShape = outputTensor.dims;
+
+    let maxConf = 0;
+    let hasRebar = false;
+
+    if (outShape.length === 3 && outShape[2] > 5) {
+      const numDet = outShape[1];
+      const boxes = outShape[2];
+
+      for (let i = 0; i < numDet; i += 1) {
+        const base = i * boxes;
+        const objConf = outData[base + 4];
+        let classIndex = 0;
+        let classConf = 0;
+
+        for (let c = 5; c < boxes; c += 1) {
+          const score = outData[base + c];
+          if (score > classConf) {
+            classConf = score;
+            classIndex = c - 5;
+          }
+        }
+
+        const confidence = objConf * classConf;
+        maxConf = Math.max(maxConf, confidence);
+
+        if (classIndex === 0 && confidence >= 0.3) {
+          hasRebar = true;
+        }
+      }
+    }
+
+    return {
+      hasExposedRebar: hasRebar,
+      confidence: maxConf,
+      method: 'YOLOv8 ONNX'
+    };
   }
 
   async detectWithRoboflow(file) {
-    if (!this.roboflowApiKey) {
-      return this.basicDetection();
-    }
+    if (!this.roboflowApiKey) return null;
 
     const formData = new FormData();
     formData.append('file', file);
 
-    try {
-      const response = await fetch(`${this.roboflowEndpoint}`, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Authorization': `Bearer ${this.roboflowApiKey}`
-        }
-      });
+    const response = await fetch(this.roboflowEndpoint, {
+      method: 'POST',
+      body: formData,
+      headers: { 'Authorization': `Bearer ${this.roboflowApiKey}` }
+    });
 
-      if (!response.ok) {
-        throw new Error(`Roboflow HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      let predictions = [];
-
-      if (data.result) {
-        if (data.result.predictions) {
-          predictions = data.result.predictions;
-        } else if (data.result.segmentation) {
-          predictions = data.result.segmentation;
-        } else if (data.result.classes) {
-          predictions = Object.entries(data.result.classes).map(([name, info]) => ({ class: name, confidence: info.confidence || info }));
-        }
-      } else if (Array.isArray(data.predictions)) {
-        predictions = data.predictions;
-      }
-
-      const rebarPredictions = predictions.filter((pred) => {
-        const className = (pred.class || pred.label || '').toLowerCase();
-        return className.includes('exposed') || className.includes('rebar');
-      });
-
-      const maxConf = rebarPredictions.reduce((max, pred) => Math.max(max, pred.confidence || 0), 0);
-      const hasRebar = maxConf > 0.35;
-
-      return {
-        hasExposedRebar: hasRebar,
-        confidence: maxConf,
-        method: 'Roboflow API'
-      };
-    } catch (error) {
-      console.error('Roboflow API failed:', error);
-      if (this.isModelLoaded && !this.fallbackMode) {
-        return this.detectWithONNX(file);
-      }
-      return this.basicDetection();
+    if (!response.ok) {
+      throw new Error(`Roboflow error ${response.status}`);
     }
+
+    const data = await response.json();
+
+    let predictions = [];
+    if (data.result?.predictions) predictions = data.result.predictions;
+    else if (data.result?.segmentation) predictions = data.result.segmentation;
+    else if (data.predictions) predictions = data.predictions;
+
+    const rebarPredictions = predictions.filter((pred) => {
+      const cls = ((pred.class || pred.label || pred.name || '') + '').toLowerCase();
+      return cls.includes('exposed') || cls.includes('rebar');
+    });
+
+    const maxConf = rebarPredictions.reduce((curr, p) => Math.max(curr, p.confidence || 0), 0);
+    const hasRebar = maxConf >= 0.35;
+
+    return {
+      hasExposedRebar: hasRebar,
+      confidence: maxConf,
+      method: 'Roboflow API'
+    };
   }
 
   basicDetection() {
-    // Very basic fallback detection
     return {
-      hasExposedRebar: Math.random() > 0.5,
-      confidence: Math.random() * 0.5 + 0.25,
-      method: 'Basic Heuristic'
+      hasExposedRebar: false,
+      confidence: 0.1,
+      method: 'Fallback'
     };
   }
 
@@ -294,30 +274,27 @@ class RebarDetector {
     this.resultsSection.style.display = 'block';
 
     const { hasExposedRebar, confidence, method } = result;
+    const pct = Math.round(Math.min(Math.max(confidence * 100, 0), 100));
 
     if (hasExposedRebar) {
       this.resultIcon.textContent = '⚠️';
       this.resultTitle.textContent = 'Exposed Rebar Detected';
-      this.resultDescription.textContent = `High confidence detection using ${method}. Immediate inspection recommended.`;
+      this.resultDescription.textContent = `Detected by ${method}. Please inspect the area physically.`;
     } else {
       this.resultIcon.textContent = '✅';
-      this.resultTitle.textContent = 'No Exposed Rebar';
-      this.resultDescription.textContent = `Analysis complete using ${method}. Structure appears safe.`;
+      this.resultTitle.textContent = 'No Exposed Rebar Detected';
+      this.resultDescription.textContent = `Analyzed by ${method}. Structure appears safe.`;
     }
 
-    // Update confidence bar
-    const percentage = Math.round(confidence * 100);
-    this.confidenceFill.style.width = `${percentage}%`;
-    this.confidencePercentage.textContent = `${percentage}%`;
+    this.confidenceFill.style.width = `${pct}%`;
+    this.confidencePercentage.textContent = `${pct}%`;
 
-    // Color coding
-    if (percentage >= 75) {
-      this.confidenceFill.style.backgroundColor = '#10b981'; // green
-    } else if (percentage >= 50) {
-      this.confidenceFill.style.backgroundColor = '#f59e0b'; // yellow
-    } else {
-      this.confidenceFill.style.backgroundColor = '#ef4444'; // red
-    }
+    if (pct >= 75) this.confidenceFill.style.backgroundColor = '#10b981';
+    else if (pct >= 50) this.confidenceFill.style.backgroundColor = '#f59e0b';
+    else this.confidenceFill.style.backgroundColor = '#ef4444';
+
+    // ensure preview remains shown
+    this.previewSection.style.display = 'block';
   }
 
   displayError() {
@@ -330,371 +307,11 @@ class RebarDetector {
   }
 }
 
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize detector when page is ready
+window.addEventListener('DOMContentLoaded', () => {
   new RebarDetector();
 });
 
-// Global reset function
 function resetUpload() {
-  location.reload();
+  window.location.reload();
 }
-        this.handleFile(files[0]);
-      }
-    });
-
-    // Analyze button
-    this.analyzeBtn.addEventListener('click', () => this.analyzeImage());
-  }
-
-  async loadModel() {
-    try {
-      this.model = await mobilenet.load();
-      this.isModelLoaded = true;
-      console.log('Model loaded successfully');
-    } catch (error) {
-      console.error('Error loading model:', error);
-      this.showError('Failed to load AI model. Please refresh the page.');
-    }
-  }
-
-  handleFileSelect(event) {
-    const file = event.target.files[0];
-    if (file) {
-      this.handleFile(file);
-    }
-  }
-
-  handleFile(file) {
-    if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      this.previewImage.src = e.target.result;
-      this.uploadArea.style.display = 'none';
-      this.previewSection.style.display = 'block';
-    };
-    reader.readAsDataURL(file);
-  }
-
-  async analyzeImage() {
-    if (!this.isModelLoaded) {
-      this.showError('AI model is still loading. Please wait.');
-      return;
-    }
-
-    // Show loading state
-    this.showLoading();
-
-    try {
-      // Get image element
-      const img = this.previewImage;
-
-      // Wait for image to load
-      if (!img.complete) {
-        await new Promise(resolve => {
-          img.onload = resolve;
-        });
-      }
-
-      // Analyze image
-      const result = await this.detectRebar(img);
-
-      // Show results
-      this.showResult(result);
-
-    } catch (error) {
-      console.error('Analysis error:', error);
-      this.showError('Failed to analyze image. Please try again.');
-    }
-  }
-
-  async detectRebar(imageElement) {
-    // Prefer Roboflow inference if API key is configured
-    if (this.roboflowApiKey) {
-      try {
-        return await this.detectRebarWithRoboflow(imageElement);
-      } catch (error) {
-        console.warn('Roboflow inference error, falling back to local model:', error);
-      }
-    }
-
-    // Local MobileNet heuristic fallback
-    return await this.detectRebarWithMobileNet(imageElement);
-  }
-
-  async detectRebarWithRoboflow(imageElement) {
-    // Convert image element to blob
-    const response = await fetch(imageElement.src);
-    const blob = await response.blob();
-
-    // Create form data for the workflow
-    const formData = new FormData();
-    formData.append('file', blob);
-
-    // Use Roboflow InferenceHTTPClient workflow approach
-    const workflowUrl = `https://serverless.roboflow.com/${this.roboflowWorkspace}/${this.roboflowWorkflow}`;
-
-    const rfResponse = await fetch(workflowUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.roboflowApiKey}`
-      },
-      body: formData
-    });
-
-    if (!rfResponse.ok) {
-      throw new Error(`Roboflow workflow error: ${rfResponse.status} ${rfResponse.statusText}`);
-    }
-
-    const result = await rfResponse.json();
-
-    // Parse workflow results for exposed rebar detection
-    let hasExposedRebar = false;
-    let maxConfidence = 0;
-    let reasoning = '';
-
-    // Check for segmentation results or object detection results
-    if (result && result.result) {
-      const workflowResult = result.result;
-
-      // Look for exposed rebar in various result formats
-      if (workflowResult.predictions) {
-        // Object detection format
-        hasExposedRebar = workflowResult.predictions.some(pred =>
-          pred.class && pred.class.toLowerCase().includes('exposed') ||
-          pred.class && pred.class.toLowerCase().includes('rebar')
-        );
-
-        maxConfidence = Math.max(...workflowResult.predictions.map(pred => pred.confidence || 0));
-        reasoning = hasExposedRebar ?
-          'Roboflow workflow detected exposed rebar in the image' :
-          'Roboflow workflow analysis shows no exposed rebar detected';
-      }
-      else if (workflowResult.segmentation) {
-        // Segmentation format
-        hasExposedRebar = workflowResult.segmentation.some(seg =>
-          seg.class && seg.class.toLowerCase().includes('exposed') ||
-          seg.class && seg.class.toLowerCase().includes('rebar')
-        );
-
-        maxConfidence = workflowResult.segmentation.length > 0 ?
-          Math.max(...workflowResult.segmentation.map(seg => seg.confidence || 0)) : 0;
-
-        reasoning = hasExposedRebar ?
-          'Roboflow segmentation detected exposed rebar regions' :
-          'Roboflow segmentation shows no exposed rebar regions';
-      }
-      else if (workflowResult.classes) {
-        // Class-based results
-        hasExposedRebar = workflowResult.classes.some(cls =>
-          cls.name && cls.name.toLowerCase().includes('exposed') ||
-          cls.name && cls.name.toLowerCase().includes('rebar')
-        );
-
-        maxConfidence = workflowResult.classes.length > 0 ?
-          Math.max(...workflowResult.classes.map(cls => cls.confidence || 0)) : 0;
-
-        reasoning = hasExposedRebar ?
-          'Roboflow classification detected exposed rebar' :
-          'Roboflow classification shows no exposed rebar';
-      }
-    }
-
-    // Fallback: check if the specified classes were detected
-    if (!hasExposedRebar && result && result[this.roboflowClasses.toLowerCase()]) {
-      hasExposedRebar = true;
-      maxConfidence = result[this.roboflowClasses.toLowerCase()].confidence || 0.8;
-      reasoning = `Roboflow detected ${this.roboflowClasses} in the image`;
-    }
-
-    const confidence = Math.min(100, Math.max(20, Math.round(maxConfidence * 100)));
-
-    return {
-      hasExposedRebar,
-      confidence,
-      reasoning
-    };
-  }
-
-  async detectRebarWithMobileNet(imageElement) {
-    const predictions = await this.model.classify(imageElement);
-    const imageClasses = predictions.map(p => p.className.toLowerCase());
-    const probabilities = predictions.map(p => p.probability);
-
-    console.log('MobileNet predictions:', predictions);
-
-    // Enhanced keyword sets for better rebar detection
-    const concreteKeywords = [
-      'concrete', 'wall', 'building', 'construction', 'architecture', 'brick', 'cement',
-      'masonry', 'stone', 'plaster', 'stucco', 'mortar', 'beam', 'column', 'slab'
-    ];
-
-    const metalKeywords = [
-      'metal', 'steel', 'iron', 'wire', 'cable', 'pipe', 'rebar', 'reinforcement',
-      'bar', 'rod', 'girder', 'beam', 'structural', 'framework'
-    ];
-
-    const corrosionKeywords = [
-      'rust', 'corrosion', 'oxidized', 'weathered', 'rusted', 'deteriorated',
-      'worn', 'aged', 'patina', 'tarnished'
-    ];
-
-    const constructionKeywords = [
-      'industrial', 'factory', 'warehouse', 'bridge', 'highway', 'infrastructure',
-      'engineering', 'civil', 'structural'
-    ];
-
-    // Analyze predictions
-    const hasConcrete = imageClasses.some(cls =>
-      concreteKeywords.some(keyword => cls.includes(keyword))
-    );
-    const hasMetal = imageClasses.some(cls =>
-      metalKeywords.some(keyword => cls.includes(keyword))
-    );
-    const hasCorrosion = imageClasses.some(cls =>
-      corrosionKeywords.some(keyword => cls.includes(keyword))
-    );
-    const hasConstruction = imageClasses.some(cls =>
-      constructionKeywords.some(keyword => cls.includes(keyword))
-    );
-
-    // Get confidence scores for relevant classes
-    const concreteScore = Math.max(...imageClasses.map((cls, idx) =>
-      concreteKeywords.some(keyword => cls.includes(keyword)) ? probabilities[idx] : 0
-    ));
-
-    const metalScore = Math.max(...imageClasses.map((cls, idx) =>
-      metalKeywords.some(keyword => cls.includes(keyword)) ? probabilities[idx] : 0
-    ));
-
-    const corrosionScore = Math.max(...imageClasses.map((cls, idx) =>
-      corrosionKeywords.some(keyword => cls.includes(keyword)) ? probabilities[idx] : 0
-    ));
-
-    // Advanced detection logic
-    let confidence = 0;
-    let hasExposedRebar = false;
-    let reasoning = '';
-
-    // High confidence: Corrosion + Concrete (strongest indicator of exposed rebar)
-    if (hasCorrosion && hasConcrete && corrosionScore > 0.1) {
-      confidence = Math.min(95, 70 + (corrosionScore * 100) * 0.3);
-      hasExposedRebar = true;
-      reasoning = 'Detected corrosion on concrete surface - strong indicator of exposed rebar';
-    }
-    // Medium-high confidence: Metal + Concrete + Construction context
-    else if (hasMetal && hasConcrete && (hasConstruction || metalScore > 0.2)) {
-      confidence = Math.min(85, 60 + (metalScore * 100) * 0.4);
-      hasExposedRebar = true;
-      reasoning = 'Detected metal elements in concrete construction context';
-    }
-    // Medium confidence: Just metal in construction setting
-    else if (hasMetal && hasConstruction) {
-      confidence = Math.min(75, 50 + (metalScore * 100) * 0.5);
-      hasExposedRebar = true;
-      reasoning = 'Detected metal in construction/industrial setting';
-    }
-    // Low confidence: Only concrete detected
-    else if (hasConcrete) {
-      confidence = Math.max(20, concreteScore * 100 * 0.3);
-      hasExposedRebar = false;
-      reasoning = 'Concrete structure detected but no exposed rebar visible';
-    }
-    // Very low confidence: No relevant features
-    else {
-      confidence = 10;
-      hasExposedRebar = false;
-      reasoning = 'No concrete or construction elements detected';
-    }
-
-    // Boost confidence if top prediction is very confident
-    const topProbability = Math.max(...probabilities);
-    if (topProbability > 0.8) {
-      confidence = Math.min(confidence + 10, 95);
-    }
-
-    // Additional check: if metal is detected with reasonable confidence
-    if (hasMetal && metalScore > 0.15 && !hasExposedRebar) {
-      confidence = Math.min(confidence + 15, 80);
-      hasExposedRebar = true;
-      reasoning = 'Metal detected - possible exposed rebar';
-    }
-
-    return {
-      hasExposedRebar,
-      confidence: Math.max(5, Math.min(Math.round(confidence), 95)),
-      reasoning
-    };
-  }
-
-  showLoading() {
-    this.resultsSection.style.display = 'block';
-    this.resultIcon.textContent = '⏳';
-    this.resultIcon.className = 'result-icon loading';
-    this.resultTitle.textContent = 'Analyzing...';
-    this.resultDescription.textContent = 'Please wait while we process your image.';
-    this.confidenceFill.style.width = '0%';
-    this.confidencePercentage.textContent = '0%';
-  }
-
-  showResult(result) {
-    this.resultsSection.style.display = 'block';
-    this.resultIcon.className = 'result-icon';
-
-    if (result.hasExposedRebar) {
-      this.resultIcon.textContent = '⚠️';
-      this.resultTitle.textContent = 'Exposed Rebar Detected';
-      this.resultDescription.textContent = result.reasoning + '. Professional inspection recommended.';
-    } else {
-      this.resultIcon.textContent = '✅';
-      this.resultTitle.textContent = 'No Exposed Rebar Detected';
-      this.resultDescription.textContent = result.reasoning + '. Structure appears intact.';
-    }
-
-    // Animate confidence bar
-    this.confidenceFill.style.width = `${result.confidence}%`;
-    this.confidencePercentage.textContent = `${result.confidence}%`;
-
-    // Update confidence bar color based on confidence level
-    this.updateConfidenceBarColor(result.confidence);
-  }
-
-  updateConfidenceBarColor(confidence) {
-    const confidenceFill = this.confidenceFill;
-
-    if (confidence >= 75) {
-      confidenceFill.style.backgroundColor = '#10b981'; // Green
-    } else if (confidence >= 50) {
-      confidenceFill.style.backgroundColor = '#f59e0b'; // Yellow/Orange
-    } else {
-      confidenceFill.style.backgroundColor = '#ef4444'; // Red
-    }
-  }
-
-  showError(message) {
-    this.resultsSection.style.display = 'block';
-    this.resultIcon.textContent = '❌';
-    this.resultIcon.className = 'result-icon';
-    this.resultTitle.textContent = 'Analysis Failed';
-    this.resultDescription.textContent = message;
-    this.confidenceFill.style.width = '0%';
-    this.confidencePercentage.textContent = '0%';
-  }
-}
-
-// Global function for reset
-function resetUpload() {
-  document.getElementById('uploadArea').style.display = 'block';
-  document.getElementById('previewSection').style.display = 'none';
-  document.getElementById('resultsSection').style.display = 'none';
-  document.getElementById('fileInput').value = '';
-}
-
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-  new RebarDetector();
-});
