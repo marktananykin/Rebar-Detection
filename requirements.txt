@@ -7,3 +7,5 @@ numpy
 pandas
 Pillow
 python-multipart
+tqdm
+requests

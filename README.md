@@ -59,6 +59,36 @@ For a robust model, you need a large dataset (thousands of images) with:
 - Various lighting conditions, angles, and distances
 - Different concrete types and rebar configurations
 
+#### Automated Data Collection
+
+This project includes an automated data collection script that downloads images from reliable academic and research sources:
+
+```bash
+# Download all available datasets
+python collect_data.py
+
+# Download only concrete crack datasets (proxy for rebar exposure)
+python collect_data.py --datasets crack
+
+# Download to custom directory
+python collect_data.py --output-dir /path/to/custom/data
+```
+
+The script downloads from verified sources including:
+- **Academic datasets**: Mendeley, IEEE, research papers
+- **Government data**: FHWA bridge inspections, NIST research
+- **Open repositories**: Kaggle, GitHub research datasets
+
+See [`DATA_COLLECTION.md`](DATA_COLLECTION.md) for detailed information about data sources and collection methods.
+
+#### Manual Data Collection
+
+If you prefer to collect your own data:
+1. Photograph concrete structures in various conditions
+2. Ensure proper lighting and focus
+3. Include scale references when possible
+4. Label images as exposed (1) or unexposed (0) rebar
+
 Sources for images:
 - Construction site photos
 - Engineering databases
