@@ -16,14 +16,32 @@ async def read_root():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Rebar Detection</title>
+        <title>Structural Rebar Inspection</title>
         <style>
-            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-            .upload-form { margin: 20px 0; }
-            .result { margin: 20px 0; padding: 10px; border-radius: 5px; }
-            .exposed { background-color: #ffebee; border: 1px solid #f44336; }
-            .no-exposed { background-color: #e8f5e8; border: 1px solid #4caf50; }
-            .error { background-color: #fff3e0; border: 1px solid #ff9800; }
+            :root {
+                --primary: #1d4ed8;
+                --secondary: #64748b;
+                --silver: #d4d4d8;
+                --background: #f8fafc;
+                --surface: #ffffff;
+                --text: #0f172a;
+                --radius: 16px;
+                --shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+            }
+            body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%); min-height: 100vh; color: var(--text); margin: 0; }
+            .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem 3rem; }
+            .hero { background: rgba(59, 130, 246, 0.08); border:1px solid var(--silver); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.75rem; text-align:center; }
+            .hero h1 { color: var(--primary); margin:0; font-size:clamp(2rem,3vw,3rem); }
+            .hero p { color: #475569; margin: 0.4rem 0; }
+            .upload-form, .result, .no-exposed, .exposed, .error { border-radius:var(--radius); }
+            .upload-form { margin:1.5rem 0; background:var(--surface); border:1px solid var(--silver); box-shadow:var(--shadow); padding:1.2rem; }
+            input[type=file] { padding:0.8rem; border:1px solid var(--silver); border-radius:8px; width:100%; }
+            button { background:var(--primary); color:white; border:none; border-radius:10px; padding:0.75rem 1.2rem; cursor:pointer; font-weight:700; transition:transform .15s ease; }
+            button:hover { transform:translateY(-1px); }
+            .result { background:#eef2ff; border:1px solid #c7d2fe; color: var(--text); margin-top:1rem; padding:1rem; }
+            .exposed { background:#fef2f2; border:1px solid #fecaca; }
+            .no-exposed { background:#ecfdf5; border:1px solid #bbf7d0; }
+            .error { background:#fff7ed; border:1px solid #ffd8a8; }
         </style>
     </head>
     <body>
@@ -58,10 +76,14 @@ async def read_root():
 
                     if (response.ok) {
                         let className = result.prediction.includes('Exposed') ? 'exposed' : 'no-exposed';
+                        const thresholdPct = result.confidence_threshold ? (result.confidence_threshold * 100).toFixed(2) : 'N/A';
                         resultDiv.innerHTML = `
                             <div class="result ${className}">
                                 <h3>Prediction: ${result.prediction}</h3>
                                 <p>Confidence: ${(result.confidence * 100).toFixed(2)}%</p>
+                                <p>Confidence Threshold: ${thresholdPct}%</p>
+                                <p>Model: ${result.method || 'unknown'}</p>
+                                <p>Status: ${result.status || 'unknown'}</p>
                             </div>
                         `;
                     } else {
