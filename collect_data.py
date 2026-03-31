@@ -13,6 +13,11 @@ import pandas as pd
 from tqdm import tqdm
 import argparse
 
+try:
+    from roboflow import Roboflow
+except ImportError:
+    Roboflow = None
+
 class RebarDataCollector:
     def __init__(self, output_dir="data/raw"):
         self.output_dir = Path(output_dir)
@@ -83,8 +88,22 @@ class RebarDataCollector:
             except Exception as e:
                 print(f"✗ Failed to download {dataset['name']}: {e}")
 
-    def collect_rebar_specific_datasets(self):
-        """Download rebar-specific datasets"""
+    def collect_rebar_specific_datasets(self, roboflow_api_key=None, roboflow_version=1, roboflow_format='yolov5'):
+        """Download rebar-specific datasets, including Roboflow rebar exposure dataset."""
+
+        if roboflow_api_key:
+            if Roboflow is None:
+                print("Roboflow Python package not installed. Run 'pip install roboflow' to use Roboflow dataset download.")
+            else:
+                self.download_roboflow_dataset(roboflow_api_key,
+                                               project='rebar-exposure-and-spalling/rebar-exposure-qm02o',
+                                               version=roboflow_version,
+                                               export_format=roboflow_format)
+                return
+
+        print("Note: Rebar-specific datasets are limited without Roboflow API key.")
+        print("Add --roboflow-api-key <KEY> to download the Roboflow rebar exposure dataset.")
+
         datasets = [
             {
                 'name': 'Rebar Corrosion Dataset',
@@ -93,8 +112,66 @@ class RebarDataCollector:
             }
         ]
 
-        # Note: These would need to be actual URLs when available
-        print("Note: Rebar-specific datasets are limited. Using concrete crack datasets as proxy.")
+        # Note: These are placeholders and can be replaced with real datasets if available.
+        for dataset in datasets:
+            try:
+                print(f"Downloading {dataset['name']}...")
+                filepath = self.output_dir / dataset['filename']
+                self.download_file(dataset['url'], filepath, f"Downloading {dataset['name']}")
+                if filepath.suffix in ['.zip', '.tar', '.gz']:
+                    extract_dir = self.output_dir / dataset['name'].lower().replace(' ', '_')
+                    print(f"Extracting {dataset['name']}...")
+                    self.extract_archive(str(filepath), str(extract_dir))
+                print(f"✓ {dataset['name']} downloaded successfully")
+            except Exception as e:
+                print(f"✗ Failed to download {dataset['name']}: {e}")
+
+    def download_roboflow_dataset(self, api_key, project='rebar-exposure-and-spalling/rebar-exposure-qm02o', version=1, export_format='yolov5'):
+        """Download dataset from Roboflow Universe using the Roboflow Python SDK."""
+        if Roboflow is None:
+            raise ImportError("roboflow package is not installed. Install it with pip install roboflow")
+
+        print(f"Connecting to Roboflow project {project}, version {version}...")
+        wf = Roboflow(api_key=api_key)
+
+        # Roboflow Universe dataset string can include workspace/project name
+        try:
+            project_name = project.split('/', 1)[0]
+            dataset_name = project.split('/', 1)[1]
+        except Exception:
+            raise ValueError("Project path should be workspace/project-slug format")
+
+        rs = wf.workspace(project_name).project(dataset_name)
+        ds = rs.version(version).download(export_format)
+
+        print(f"Downloaded dataset to {ds.location}")
+
+        # If the dataset includes train/test splits, we can generate our CSV automatically.
+        labels_dir = Path(ds.location)
+        if (labels_dir / 'train').exists() and (labels_dir / 'test').exists():
+            self._generate_csv_from_dataset(labels_dir / 'train', labels_dir / 'test')
+
+        return ds.location
+
+    def _generate_csv_from_dataset(self, train_dir, test_dir):
+        """Generate train.csv and test.csv for binary classification from the Roboflow object detection labels."""
+        for portion, directory in [('train', train_dir), ('test', test_dir)]:
+            output_csv = self.output_dir / f"{portion}.csv"
+            rows = []
+            for image_file in directory.rglob('*.jpg'):
+                label_assigned = 0
+                annotation_file = image_file.with_suffix('.txt')
+                if annotation_file.exists():
+                    with open(annotation_file, 'r') as ann:
+                        lines = [l.strip() for l in ann if l.strip()]
+                        if len(lines) > 0:
+                            label_assigned = 1
+                rows.append((image_file.name, label_assigned))
+            with open(output_csv, 'w') as f:
+                f.write('filename,label\n')
+                for fn, lbl in rows:
+                    f.write(f"{fn},{lbl}\n")
+            print(f"CSV generated: {output_csv} ({len(rows)} entries)")
 
     def create_labels_csv(self):
         """Create CSV files for training labels"""
@@ -123,6 +200,9 @@ def main():
     parser.add_argument('--output-dir', default='data/raw', help='Output directory for downloaded data')
     parser.add_argument('--datasets', nargs='+', choices=['crack', 'rebar', 'all'],
                        default=['all'], help='Which datasets to download')
+    parser.add_argument('--roboflow-api-key', default=None, help='Roboflow API key for downloading the rebar exposure dataset')
+    parser.add_argument('--roboflow-version', type=int, default=1, help='Roboflow dataset version')
+    parser.add_argument('--roboflow-format', default='yolov5', help='Roboflow export format (e.g., yolov5, coco)')
 
     args = parser.parse_args()
 
@@ -134,7 +214,11 @@ def main():
 
     if 'rebar' in args.datasets or 'all' in args.datasets:
         print("Collecting rebar-specific datasets...")
-        collector.collect_rebar_specific_datasets()
+        collector.collect_rebar_specific_datasets(
+            roboflow_api_key=args.roboflow_api_key,
+            roboflow_version=args.roboflow_version,
+            roboflow_format=args.roboflow_format
+        )
 
     collector.create_labels_csv()
 

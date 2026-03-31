@@ -1,41 +1,23 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torchvision.models as models
 
 class RebarDetectionModel(nn.Module):
-    def __init__(self, num_classes=2):
+    def __init__(self, num_classes=2, pretrained=True):
         super(RebarDetectionModel, self).__init__()
-        # Convolutional layers
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.conv4 = nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
 
-        # Pooling layers
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        # Use pretrained ResNet backbone for better generalized feature extraction
+        self.backbone = models.resnet18(pretrained=pretrained)
 
-        # Fully connected layers
-        self.fc1 = nn.Linear(256 * 8 * 8, 512)  # Assuming input size 128x128 -> 8x8 after 4 pools
-        self.fc2 = nn.Linear(512, 128)
-        self.fc3 = nn.Linear(128, num_classes)
-
-        # Dropout
-        self.dropout = nn.Dropout(0.5)
+        # Replace the final classification layer
+        in_features = self.backbone.fc.in_features
+        self.backbone.fc = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(in_features, 256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.4),
+            nn.Linear(256, num_classes)
+        )
 
     def forward(self, x):
-        # Convolutional layers with ReLU and pooling
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = self.pool(F.relu(self.conv3(x)))
-        x = self.pool(F.relu(self.conv4(x)))
-
-        # Flatten
-        x = x.view(-1, 256 * 8 * 8)
-
-        # Fully connected layers
-        x = F.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = F.relu(self.fc2(x))
-        x = self.dropout(x)
-        x = self.fc3(x)
-        return x
+        return self.backbone(x)

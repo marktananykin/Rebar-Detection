@@ -3,6 +3,10 @@ class RebarDetector {
   constructor() {
     this.model = null;
     this.isModelLoaded = false;
+    this.roboflowApiKey = window.ROBOFLOW_API_KEY || '';
+    this.roboflowProject = window.ROBOFLOW_PROJECT || 'rebar-exposure-and-spalling/rebar-exposure-qm02o';
+    this.roboflowModelVersion = window.ROBOFLOW_MODEL_VERSION || 1;
+
     this.initializeElements();
     this.setupEventListeners();
     this.loadModel();
@@ -117,68 +121,98 @@ class RebarDetector {
   }
 
   async detectRebar(imageElement) {
-    // Use MobileNet to classify the image
-    const predictions = await this.model.classify(imageElement);
+    // Prefer Roboflow inference if API key is configured
+    if (this.roboflowApiKey) {
+      try {
+        return await this.detectRebarWithRoboflow(imageElement);
+      } catch (error) {
+        console.warn('Roboflow inference error, falling back to local model:', error);
+      }
+    }
 
-    // Enhanced rebar detection logic
+    // Local MobileNet heuristic fallback
+    return await this.detectRebarWithMobileNet(imageElement);
+  }
+
+  async detectRebarWithRoboflow(imageElement) {
+    const apiUrl = `https://detect.roboflow.com/${this.roboflowProject}/${this.roboflowModelVersion}`;
+
+    // Convert image element to blob and send to Roboflow
+    const response = await fetch(imageElement.src);
+    const blob = await response.blob();
+
+    const formData = new FormData();
+    formData.append('file', blob);
+    formData.append('api_key', this.roboflowApiKey);
+
+    const rfResponse = await fetch(apiUrl, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!rfResponse.ok) {
+      throw new Error(`Roboflow API error: ${rfResponse.status} ${rfResponse.statusText}`);
+    }
+
+    const data = await rfResponse.json();
+    const containsExposure = data?.predictions?.some(pred => pred.class.toLowerCase().includes('rebar'));
+    const hasSpall = data?.predictions?.some(pred => pred.class.toLowerCase().includes('spall'));
+
+    const exposureProbability = data?.predictions?.reduce((acc, pred) => {
+      const name = pred.class.toLowerCase();
+      if (name.includes('rebar') || name.includes('exposure') || name.includes('spall')) {
+        return Math.max(acc, pred.confidence || 0);
+      }
+      return acc;
+    }, 0);
+
+    const exposed = containsExposure || hasSpall;
+    const confidence = Math.min(100, Math.max(20, Math.round(exposureProbability * 100)));
+
+    return {
+      hasExposedRebar: exposed,
+      confidence,
+      reasoning: exposed ? 'Roboflow object detection indicates exposed rebar/spalling' : 'Roboflow object detection indicates no visible exposed rebar'
+    };
+  }
+
+  async detectRebarWithMobileNet(imageElement) {
+    const predictions = await this.model.classify(imageElement);
     const imageClasses = predictions.map(p => p.className.toLowerCase());
     const probabilities = predictions.map(p => p.probability);
 
-    console.log('Predictions:', predictions); // Debug logging
+    console.log('MobileNet predictions:', predictions);
 
-    // Look for concrete/construction related classes
     const concreteKeywords = ['concrete', 'wall', 'building', 'construction', 'architecture', 'brick', 'cement', 'masonry'];
     const metalKeywords = ['metal', 'steel', 'iron', 'wire', 'cable', 'pipe', 'rebar', 'reinforcement'];
     const corrosionKeywords = ['rust', 'corrosion', 'oxidized', 'weathered'];
 
-    const hasConcrete = imageClasses.some(cls =>
-      concreteKeywords.some(keyword => cls.includes(keyword))
-    );
+    const hasConcrete = imageClasses.some(cls => concreteKeywords.some(keyword => cls.includes(keyword)));
+    const hasMetal = imageClasses.some(cls => metalKeywords.some(keyword => cls.includes(keyword)));
+    const hasCorrosion = imageClasses.some(cls => corrosionKeywords.some(keyword => cls.includes(keyword)));
 
-    const hasMetal = imageClasses.some(cls =>
-      metalKeywords.some(keyword => cls.includes(keyword))
-    );
-
-    const hasCorrosion = imageClasses.some(cls =>
-      corrosionKeywords.some(keyword => cls.includes(keyword))
-    );
-
-    // Calculate confidence based on detected features
     let confidence = 0;
     let hasExposedRebar = false;
 
-    // Primary indicators of exposed rebar
     if (hasMetal && hasConcrete) {
-      // Metal + concrete suggests possible rebar exposure
       confidence = 70;
       hasExposedRebar = true;
     } else if (hasCorrosion && hasConcrete) {
-      // Corrosion + concrete is a strong indicator
       confidence = 85;
       hasExposedRebar = true;
     } else if (hasConcrete) {
-      // Just concrete - likely no exposed rebar
-      confidence = 20;
+      confidence = 25;
       hasExposedRebar = false;
     } else {
-      // No concrete detected - probably not a relevant image
       confidence = 10;
       hasExposedRebar = false;
     }
 
-    // Adjust confidence based on top prediction probability
-    const topProbability = probabilities[0];
-    if (topProbability > 0.8) {
-      confidence = Math.min(confidence + 15, 95);
-    } else if (topProbability > 0.6) {
-      confidence = Math.min(confidence + 10, 90);
-    }
+    const topProbability = probabilities[0] || 0;
+    if (topProbability > 0.8) confidence = Math.min(confidence + 15, 95);
+    else if (topProbability > 0.6) confidence = Math.min(confidence + 10, 90);
 
-    // Special case: if we detect metal objects prominently, increase confidence
-    const metalIndices = imageClasses.map((cls, idx) =>
-      metalKeywords.some(keyword => cls.includes(keyword)) ? idx : -1
-    ).filter(idx => idx !== -1);
-
+    const metalIndices = imageClasses.map((cls, idx) => (metalKeywords.some(keyword => cls.includes(keyword)) ? idx : -1)).filter(idx => idx !== -1);
     if (metalIndices.length > 0) {
       const metalProbability = Math.max(...metalIndices.map(idx => probabilities[idx]));
       if (metalProbability > 0.3) {
@@ -188,11 +222,9 @@ class RebarDetector {
     }
 
     return {
-      hasExposedRebar: hasExposedRebar,
-      confidence: Math.max(5, Math.min(confidence, 95)), // Clamp between 5-95%
-      reasoning: hasExposedRebar ?
-        `Detected ${hasCorrosion ? 'corroded ' : ''}metal elements in concrete structure` :
-        'No exposed rebar detected in concrete structure'
+      hasExposedRebar,
+      confidence: Math.max(5, Math.min(confidence, 95)),
+      reasoning: hasExposedRebar ? 'Detected metal/corrosion signals in concrete structure' : 'No exposed rebar detected'
     };
   }
 

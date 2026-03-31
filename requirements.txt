@@ -9,3 +9,4 @@ Pillow
 python-multipart
 tqdm
 requests
+roboflow

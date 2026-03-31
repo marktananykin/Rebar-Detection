@@ -99,6 +99,15 @@ For developers who want to run locally or train custom models:
    bundle exec jekyll serve
    ```
 
+### Roboflow Data Ingestion
+
+You can fetch a curated dataset from Roboflow Universe (`rebar-exposure-qm02o`) with an API key, which drastically improves model accuracy for exposed rebar detection:
+
+```bash
+pip install roboflow
+python collect_data.py --datasets rebar --roboflow-api-key YOUR_ROBOFLOW_API_KEY
+```
+
 ## 🖥️ Usage
 
 ### Web Interface (Recommended)

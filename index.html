@@ -69,6 +69,14 @@ title: Rebar Detection
   </main>
 </div>
 
+<script>
+  // Optional: configure Roboflow to use the rebar exposure dataset as a higher-fidelity fallback.
+  // Get your API key from https://roboflow.com and paste it here.
+  window.ROBOFLOW_API_KEY = '';
+  window.ROBOFLOW_PROJECT = 'rebar-exposure-and-spalling/rebar-exposure-qm02o';
+  window.ROBOFLOW_MODEL_VERSION = 1;
+</script>
+
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
 <script src="{{ site.baseurl }}/assets/js/rebar-detector.js"></script>

@@ -251,6 +251,16 @@ intact_concrete_045.jpg,0
 - **IEEE DataPort**: https://ieee-dataport.org/
 - **Zenodo**: https://zenodo.org/
 
+## Roboflow Universe Dataset (Recommended)
+- **Dataset**: Rebar Exposure and Spalling
+- **URL**: https://universe.roboflow.com/rebar-exposure-and-spalling/rebar-exposure-qm02o
+- **Direct usage**: `python collect_data.py --datasets rebar --roboflow-api-key <YOUR_KEY>`
+- **How to get key**: https://roboflow.com/sign-up
+- **Benefits**:
+  - High-quality labeled rebar exposure images
+  - Built-in object detection annotations (rebar/spalling)
+  - Ready-to-export YOLOv5/Coco/TF format
+
 1. **Label Images**: 0 = No exposed rebar, 1 = Exposed rebar
 2. **Quality Control**: Have multiple reviewers check labels
 3. **Split Data**: 80% train, 20% test/validation
