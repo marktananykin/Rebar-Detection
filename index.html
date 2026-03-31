@@ -1,0 +1,73 @@
+---
+layout: default
+title: Rebar Detection
+---
+
+<div class="container">
+  <header class="hero">
+    <h1>🔍 Rebar Detection System</h1>
+    <p>Upload an image of concrete structures to detect exposed rebar</p>
+  </header>
+
+  <main class="main-content">
+    <div class="upload-section">
+      <div class="upload-area" id="uploadArea">
+        <div class="upload-icon">📷</div>
+        <p>Drag & drop an image here or click to browse</p>
+        <input type="file" id="fileInput" accept="image/*" style="display: none;">
+        <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+          Choose Image
+        </button>
+      </div>
+
+      <div class="preview-section" id="previewSection" style="display: none;">
+        <h3>Image Preview</h3>
+        <img id="previewImage" alt="Preview">
+        <div class="actions">
+          <button class="analyze-btn" id="analyzeBtn">🔍 Analyze Image</button>
+          <button class="reset-btn" onclick="resetUpload()">↻ Upload New Image</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="results-section" id="resultsSection" style="display: none;">
+      <h3>Analysis Results</h3>
+      <div class="result-card" id="resultCard">
+        <div class="result-icon" id="resultIcon">⏳</div>
+        <div class="result-text">
+          <h4 id="resultTitle">Analyzing...</h4>
+          <p id="resultDescription">Please wait while we process your image.</p>
+        </div>
+        <div class="confidence-bar">
+          <div class="confidence-fill" id="confidenceFill" style="width: 0%"></div>
+          <span class="confidence-text" id="confidenceText">0%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-section">
+      <h3>How It Works</h3>
+      <div class="info-grid">
+        <div class="info-card">
+          <div class="info-icon">🖼️</div>
+          <h4>Upload Image</h4>
+          <p>Upload a photo of concrete walls, columns, or beams</p>
+        </div>
+        <div class="info-card">
+          <div class="info-icon">🤖</div>
+          <h4>AI Analysis</h4>
+          <p>Our AI model analyzes the image for exposed rebar patterns</p>
+        </div>
+        <div class="info-card">
+          <div class="info-icon">📊</div>
+          <h4>Get Results</h4>
+          <p>Receive instant detection results with confidence scores</p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+<script src="{{ site.baseurl }}/assets/js/rebar-detector.js"></script>

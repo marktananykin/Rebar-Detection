@@ -1,29 +1,62 @@
-# Rebar Detection System
+# 🔍 Rebar Detection System
 
-This project implements a machine learning system to detect exposed rebar in images of concrete structures (walls, columns, beams). The system uses a Convolutional Neural Network (CNN) trained on image data to classify whether rebar is exposed or not.
+[![Deploy to GitHub Pages](https://github.com/marktananykin/Rebar-Detection/actions/workflows/deploy.yml/badge.svg)](https://github.com/marktananykin/Rebar-Detection/actions/workflows/deploy.yml)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Visit%20Site-blue)](https://marktananykin.github.io/Rebar-Detection/)
 
-## Features
+This project implements a machine learning system to detect exposed rebar in images of concrete structures (walls, columns, beams). The system uses client-side AI with TensorFlow.js to classify whether rebar is exposed or not, all running directly in your browser.
 
-- **Image Classification**: Classify images as containing exposed rebar or not
-- **Web API**: FastAPI-based web interface for easy image upload and prediction
-- **Training Pipeline**: Complete training script with data loading and model training
-- **Inference Engine**: Standalone inference capability for batch processing
+## 🌐 Live Demo
 
-## Project Structure
+Try the system now: **[https://marktananykin.github.io/Rebar-Detection/](https://marktananykin.github.io/Rebar-Detection/)**
+
+## ✨ Features
+
+- **Browser-Based AI**: No server required - everything runs in your browser
+- **Real-Time Analysis**: Instant results with confidence scores
+- **Mobile Friendly**: Works on desktop and mobile devices
+- **Privacy Focused**: Images never leave your device
+- **Training Pipeline**: Complete training script for custom models
+- **Data Collection**: Automated scripts for gathering training data
+
+## 📁 Project Structure
 
 ```
-├── app.py              # FastAPI web application
-├── config.py           # Configuration settings
-├── data_loader.py      # Data loading utilities
-├── inference.py        # Inference and prediction logic
-├── model.py            # CNN model architecture
-├── train.py            # Training script
-├── test_models.py      # Model testing utilities
-├── requirements.txt    # Python dependencies
-└── README.md           # This file
+├── index.html              # Main website page
+├── _config.yml             # Jekyll configuration
+├── _layouts/               # Jekyll layouts
+│   └── default.html
+├── assets/                 # Static assets
+│   ├── css/
+│   │   └── style.css       # Website styling
+│   └── js/
+│       └── rebar-detector.js # Client-side AI logic
+├── app.py                  # FastAPI web application (alternative)
+├── config.py               # Configuration settings
+├── data_loader.py          # Data loading utilities
+├── inference.py            # Inference and prediction logic
+├── model.py                # CNN model architecture
+├── train.py                # Training script
+├── collect_data.py         # Automated data collection
+├── test_models.py          # Model testing utilities
+├── requirements.txt        # Python dependencies
+└── README.md               # This file
 ```
 
-## Installation
+## 🚀 Quick Start
+
+### Using the Live Website
+
+The easiest way to use the system is through our live website:
+
+1. Visit **[https://marktananykin.github.io/Rebar-Detection/](https://marktananykin.github.io/Rebar-Detection/)**
+2. Upload an image of concrete structures
+3. Get instant AI-powered analysis
+
+**No installation required!** Everything runs in your browser.
+
+### Local Development
+
+For developers who want to run locally or train custom models:
 
 1. Clone the repository:
    ```bash
@@ -31,15 +64,60 @@ This project implements a machine learning system to detect exposed rebar in ima
    cd Rebar-Detection
    ```
 
-2. Install dependencies:
+2. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-## Data Preparation
+3. For the Jekyll website (optional):
+   ```bash
+   gem install bundler
+   bundle install
+   bundle exec jekyll serve
+   ```
 
-To train the model, you need a dataset of images with annotations. The expected format is:
+## 🖥️ Usage
 
+### Web Interface (Recommended)
+
+Simply visit the live site and upload images directly in your browser.
+
+### Local API Server
+
+If you prefer a local server (requires Python):
+
+```bash
+python app.py
+```
+
+Then visit `http://localhost:8000` to use the web interface.
+
+### Command Line Inference
+
+For batch processing or integration:
+
+```bash
+python inference.py --image path/to/image.jpg
+```
+
+## 🤖 How It Works
+
+### Browser-Based AI
+
+The live website uses **TensorFlow.js** to run machine learning models directly in your browser:
+
+1. **Image Upload**: You upload an image (never leaves your device)
+2. **Feature Extraction**: MobileNet analyzes visual features
+3. **Classification**: Custom logic detects rebar patterns
+4. **Results**: Instant feedback with confidence scores
+
+**Privacy**: All processing happens locally - your images stay private!
+
+### Training Custom Models
+
+For advanced users who want to train their own models:
+
+#### Data Format
 - A directory containing image files
 - CSV files (`train.csv`, `test.csv`) with columns: `filename`, `label` (0 for no exposed rebar, 1 for exposed rebar)
 
@@ -51,8 +129,7 @@ image2.jpg,1
 image3.jpg,0
 ```
 
-### Collecting Images
-
+#### Training Requirements
 For a robust model, you need a large dataset (thousands of images) with:
 - Images of concrete walls, columns, and beams
 - Both exposed and unexposed rebar conditions
@@ -81,30 +158,6 @@ The script downloads from verified sources including:
 
 See [`DATA_COLLECTION.md`](DATA_COLLECTION.md) for detailed information about data sources and collection methods.
 
-#### Manual Data Collection
-
-If you prefer to collect your own data:
-1. Photograph concrete structures in various conditions
-2. Ensure proper lighting and focus
-3. Include scale references when possible
-4. Label images as exposed (1) or unexposed (0) rebar
-
-Sources for images:
-- Construction site photos
-- Engineering databases
-- Synthetic image generation tools
-- Public datasets (if available)
-
-## Training the Model
-
-1. Prepare your data directory with images and CSV files
-2. Run the training script:
-   ```bash
-   python train.py --data-path /path/to/your/data --epochs 50 --batch-size 32
-   ```
-
-The trained model will be saved as `rebar_model.pth`.
-
 ## Running Inference
 
 ### Web Interface
@@ -127,7 +180,32 @@ print(f"Prediction: {result['prediction']}")
 print(f"Confidence: {result['confidence']:.2f}")
 ```
 
-## Model Architecture
+## 🚀 Deployment
+
+### GitHub Pages (Automatic)
+
+The website automatically deploys to GitHub Pages when you push to the main branch:
+
+1. Push your changes to `main`
+2. GitHub Actions will build and deploy automatically
+3. Visit: `https://marktananykin.github.io/Rebar-Detection/`
+
+### Local Jekyll Development
+
+For local development of the website:
+
+```bash
+# Install Ruby dependencies
+bundle install
+
+# Serve locally
+bundle exec jekyll serve
+
+# Build for production
+bundle exec jekyll build
+```
+
+## 🏗️ Model Architecture
 
 The system uses a CNN with the following architecture:
 - 4 convolutional layers with increasing filters (32, 64, 128, 256)
@@ -137,7 +215,7 @@ The system uses a CNN with the following architecture:
 
 Input images are resized to 128x128 pixels.
 
-## Configuration
+## ⚙️ Configuration
 
 Modify `config.py` to adjust:
 - Model hyperparameters
@@ -145,7 +223,7 @@ Modify `config.py` to adjust:
 - Data paths
 - Class labels
 
-## Testing
+## 🧪 Testing
 
 Run the test suite:
 ```bash

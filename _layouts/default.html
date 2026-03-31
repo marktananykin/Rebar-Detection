@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page.title | default: site.title }}</title>
+  <meta name="description" content="{{ page.description | default: site.description }}">
+  <link rel="stylesheet" href="{{ site.baseurl }}/assets/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
+</head>
+<body>
+  {{ content }}
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-content">
+        <p>&copy; 2024 Rebar Detection System. Built with TensorFlow.js and Jekyll.</p>
+        <div class="footer-links">
+          <a href="https://github.com/marktananykin/Rebar-Detection" target="_blank">View on GitHub</a>
+          <a href="https://github.com/marktananykin/Rebar-Detection/blob/main/DATA_COLLECTION.md" target="_blank">Data Sources</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <style>
+    .footer {
+      background: #1e293b;
+      color: #cbd5e1;
+      padding: 2rem 0 1rem;
+      margin-top: 4rem;
+    }
+
+    .footer-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    .footer-links a {
+      color: #94a3b8;
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    .footer-links a:hover {
+      color: #f1f5f9;
+    }
+
+    @media (max-width: 768px) {
+      .footer-content {
+        flex-direction: column;
+        text-align: center;
+      }
+
+      .footer-links {
+        justify-content: center;
+      }
+    }
+  </style>
+</body>
+</html>

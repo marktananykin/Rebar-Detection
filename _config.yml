@@ -1,0 +1,48 @@
+title: Rebar Detection System
+description: AI-powered detection of exposed rebar in concrete structures
+url: "https://marktananykin.github.io"
+baseurl: "/Rebar-Detection"
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+theme: minima
+
+# Plugins
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+
+# Exclude from processing
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor/
+  - .bundle/
+  - .sass-cache/
+  - .jekyll-cache/
+  - gemfiles/
+  - .vscode/
+  - .git/
+  - .github/
+
+# Include files
+include:
+  - _pages
+
+# Collections
+collections:
+  pages:
+    output: true
+    permalink: /:name/
+
+# Defaults
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: "default"
+  - scope:
+      path: "_pages"
+    values:
+      layout: "default"
