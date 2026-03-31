@@ -3,8 +3,12 @@ from fastapi.responses import HTMLResponse
 import shutil
 import os
 from inference import detect_rebar
+import os
 
 app = FastAPI(title="Rebar Detection API", description="API for detecting exposed rebar in concrete structures")
+
+# Get Roboflow API key from environment
+ROBOFLOW_API_KEY = os.getenv('ROBOFLOW_API_KEY', 'VNbzzXtSvbYr0vWCuokM')  # Use provided key as default
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -79,20 +83,22 @@ async def read_root():
 
 @app.post("/predict")
 async def predict_rebar(file: UploadFile = File(...)):
-    # Check if model file exists
-    if not os.path.exists('rebar_model.pth'):
-        raise HTTPException(status_code=400, detail="Model not found. Please train the model first using train.py")
-
     # Save uploaded file temporarily
     temp_path = f"temp_{file.filename}"
     with open(temp_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        # Perform prediction
-        result = detect_rebar(temp_path)
+        # Try Roboflow first, fallback to local model
+        result = detect_rebar(temp_path, roboflow_api_key=ROBOFLOW_API_KEY)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+        # If Roboflow fails, try local model
+        try:
+            if not os.path.exists('rebar_model.pth'):
+                raise HTTPException(status_code=400, detail="Model not found. Please train the model first using train.py")
+            result = detect_rebar(temp_path)
+        except Exception as local_e:
+            raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}, Local model also failed: {str(local_e)}")
     finally:
         # Clean up temp file
         if os.path.exists(temp_path):

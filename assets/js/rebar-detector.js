@@ -4,8 +4,9 @@ class RebarDetector {
     this.model = null;
     this.isModelLoaded = false;
     this.roboflowApiKey = window.ROBOFLOW_API_KEY || '';
-    this.roboflowProject = window.ROBOFLOW_PROJECT || 'rebar-exposure-and-spalling/rebar-exposure-qm02o';
-    this.roboflowModelVersion = window.ROBOFLOW_MODEL_VERSION || 1;
+    this.roboflowWorkspace = window.ROBOFLOW_WORKSPACE || 'marks-workspace-dymtv';
+    this.roboflowWorkflow = window.ROBOFLOW_WORKFLOW || 'general-segmentation-api';
+    this.roboflowClasses = window.ROBOFLOW_CLASSES || 'Exposed rebar';
 
     this.initializeElements();
     this.setupEventListeners();
@@ -135,44 +136,96 @@ class RebarDetector {
   }
 
   async detectRebarWithRoboflow(imageElement) {
-    const apiUrl = `https://detect.roboflow.com/${this.roboflowProject}/${this.roboflowModelVersion}`;
-
-    // Convert image element to blob and send to Roboflow
+    // Convert image element to blob
     const response = await fetch(imageElement.src);
     const blob = await response.blob();
 
+    // Create form data for the workflow
     const formData = new FormData();
     formData.append('file', blob);
-    formData.append('api_key', this.roboflowApiKey);
 
-    const rfResponse = await fetch(apiUrl, {
+    // Use Roboflow InferenceHTTPClient workflow approach
+    const workflowUrl = `https://serverless.roboflow.com/${this.roboflowWorkspace}/${this.roboflowWorkflow}`;
+
+    const rfResponse = await fetch(workflowUrl, {
       method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.roboflowApiKey}`
+      },
       body: formData
     });
 
     if (!rfResponse.ok) {
-      throw new Error(`Roboflow API error: ${rfResponse.status} ${rfResponse.statusText}`);
+      throw new Error(`Roboflow workflow error: ${rfResponse.status} ${rfResponse.statusText}`);
     }
 
-    const data = await rfResponse.json();
-    const containsExposure = data?.predictions?.some(pred => pred.class.toLowerCase().includes('rebar'));
-    const hasSpall = data?.predictions?.some(pred => pred.class.toLowerCase().includes('spall'));
+    const result = await rfResponse.json();
 
-    const exposureProbability = data?.predictions?.reduce((acc, pred) => {
-      const name = pred.class.toLowerCase();
-      if (name.includes('rebar') || name.includes('exposure') || name.includes('spall')) {
-        return Math.max(acc, pred.confidence || 0);
+    // Parse workflow results for exposed rebar detection
+    let hasExposedRebar = false;
+    let maxConfidence = 0;
+    let reasoning = '';
+
+    // Check for segmentation results or object detection results
+    if (result && result.result) {
+      const workflowResult = result.result;
+
+      // Look for exposed rebar in various result formats
+      if (workflowResult.predictions) {
+        // Object detection format
+        hasExposedRebar = workflowResult.predictions.some(pred =>
+          pred.class && pred.class.toLowerCase().includes('exposed') ||
+          pred.class && pred.class.toLowerCase().includes('rebar')
+        );
+
+        maxConfidence = Math.max(...workflowResult.predictions.map(pred => pred.confidence || 0));
+        reasoning = hasExposedRebar ?
+          'Roboflow workflow detected exposed rebar in the image' :
+          'Roboflow workflow analysis shows no exposed rebar detected';
       }
-      return acc;
-    }, 0);
+      else if (workflowResult.segmentation) {
+        // Segmentation format
+        hasExposedRebar = workflowResult.segmentation.some(seg =>
+          seg.class && seg.class.toLowerCase().includes('exposed') ||
+          seg.class && seg.class.toLowerCase().includes('rebar')
+        );
 
-    const exposed = containsExposure || hasSpall;
-    const confidence = Math.min(100, Math.max(20, Math.round(exposureProbability * 100)));
+        maxConfidence = workflowResult.segmentation.length > 0 ?
+          Math.max(...workflowResult.segmentation.map(seg => seg.confidence || 0)) : 0;
+
+        reasoning = hasExposedRebar ?
+          'Roboflow segmentation detected exposed rebar regions' :
+          'Roboflow segmentation shows no exposed rebar regions';
+      }
+      else if (workflowResult.classes) {
+        // Class-based results
+        hasExposedRebar = workflowResult.classes.some(cls =>
+          cls.name && cls.name.toLowerCase().includes('exposed') ||
+          cls.name && cls.name.toLowerCase().includes('rebar')
+        );
+
+        maxConfidence = workflowResult.classes.length > 0 ?
+          Math.max(...workflowResult.classes.map(cls => cls.confidence || 0)) : 0;
+
+        reasoning = hasExposedRebar ?
+          'Roboflow classification detected exposed rebar' :
+          'Roboflow classification shows no exposed rebar';
+      }
+    }
+
+    // Fallback: check if the specified classes were detected
+    if (!hasExposedRebar && result && result[this.roboflowClasses.toLowerCase()]) {
+      hasExposedRebar = true;
+      maxConfidence = result[this.roboflowClasses.toLowerCase()].confidence || 0.8;
+      reasoning = `Roboflow detected ${this.roboflowClasses} in the image`;
+    }
+
+    const confidence = Math.min(100, Math.max(20, Math.round(maxConfidence * 100)));
 
     return {
-      hasExposedRebar: exposed,
+      hasExposedRebar,
       confidence,
-      reasoning: exposed ? 'Roboflow object detection indicates exposed rebar/spalling' : 'Roboflow object detection indicates no visible exposed rebar'
+      reasoning
     };
   }
 
