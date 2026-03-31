@@ -42,6 +42,29 @@ Try the system now: **[https://marktananykin.github.io/Rebar-Detection/](https:/
 └── README.md               # This file
 ```
 
+## 🤖 Detection Algorithm
+
+The system uses an enhanced heuristic-based approach with TensorFlow.js and MobileNet for image classification:
+
+### How It Works:
+1. **Image Classification**: Uses MobileNet to identify objects in the image
+2. **Feature Detection**: Looks for specific indicators of exposed rebar:
+   - **Concrete Detection**: Identifies concrete/construction materials
+   - **Metal Detection**: Detects metal elements that could be rebar
+   - **Corrosion Detection**: Identifies rust and corrosion patterns
+3. **Confidence Scoring**: Combines multiple factors for accurate results
+
+### Detection Logic:
+- **Exposed Rebar**: Detected when metal + concrete are present, especially with corrosion
+- **No Exposed Rebar**: When only concrete is detected without metal elements
+- **Confidence Levels**: Ranged from 5-95% based on classification certainty
+
+### Accuracy Improvements:
+- Enhanced keyword matching for construction materials
+- Corrosion detection for rusted rebar
+- Probability weighting based on classification confidence
+- Multi-factor analysis for better results
+
 ## 🚀 Quick Start
 
 ### Using the Live Website
