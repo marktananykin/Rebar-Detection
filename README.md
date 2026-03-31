@@ -12,11 +12,13 @@ Try the system now: **[https://marktananykin.github.io/Rebar-Detection/](https:/
 ## ✨ Features
 
 - **Browser-Based AI**: No server required - everything runs in your browser
+- **Roboflow Integration**: Uses advanced computer vision models for accurate detection
 - **Real-Time Analysis**: Instant results with confidence scores
 - **Mobile Friendly**: Works on desktop and mobile devices
 - **Privacy Focused**: Images never leave your device
 - **Training Pipeline**: Complete training script for custom models
 - **Data Collection**: Automated scripts for gathering training data
+- **Dual Detection**: Roboflow API + fallback to local TensorFlow.js models
 
 ## 📁 Project Structure
 
@@ -44,26 +46,30 @@ Try the system now: **[https://marktananykin.github.io/Rebar-Detection/](https:/
 
 ## 🤖 Detection Algorithm
 
-The system uses an enhanced heuristic-based approach with TensorFlow.js and MobileNet for image classification:
+The system uses a **dual-detection approach** combining Roboflow's advanced computer vision with client-side AI:
+
+### Primary Method - Roboflow API:
+- Uses your configured Roboflow workspace and workflow
+- Advanced segmentation and object detection for "Exposed rebar"
+- High accuracy with professional computer vision models
+- Real-time API calls with instant results
+
+### Fallback Method - TensorFlow.js:
+- Client-side AI using MobileNet for image classification
+- Enhanced heuristic-based approach for rebar detection
+- Works offline when Roboflow is unavailable
 
 ### How It Works:
-1. **Image Classification**: Uses MobileNet to identify objects in the image
-2. **Feature Detection**: Looks for specific indicators of exposed rebar:
-   - **Concrete Detection**: Identifies concrete/construction materials
-   - **Metal Detection**: Detects metal elements that could be rebar
-   - **Corrosion Detection**: Identifies rust and corrosion patterns
-3. **Confidence Scoring**: Combines multiple factors for accurate results
+1. **Image Upload**: User uploads photo of concrete structures
+2. **Roboflow Analysis**: API analyzes image for exposed rebar patterns
+3. **Fallback Processing**: If API fails, uses local TensorFlow.js model
+4. **Result Display**: Shows detection result with confidence score
 
-### Detection Logic:
-- **Exposed Rebar**: Detected when metal + concrete are present, especially with corrosion
-- **No Exposed Rebar**: When only concrete is detected without metal elements
-- **Confidence Levels**: Ranged from 5-95% based on classification certainty
-
-### Accuracy Improvements:
-- Enhanced keyword matching for construction materials
-- Corrosion detection for rusted rebar
-- Probability weighting based on classification confidence
-- Multi-factor analysis for better results
+### Detection Capabilities:
+- **Exposed Rebar**: Identifies visible rebar, corrosion, and spalling
+- **Construction Context**: Recognizes concrete walls, columns, beams
+- **Confidence Scoring**: Provides probability estimates for results
+- **Error Handling**: Graceful fallback between detection methods
 
 ## 🚀 Quick Start
 
@@ -76,6 +82,18 @@ The easiest way to use the system is through our live website:
 3. Get instant AI-powered analysis
 
 **No installation required!** Everything runs in your browser.
+
+### Roboflow Configuration
+
+The website is pre-configured with your Roboflow API key for enhanced detection. If you want to use your own Roboflow models:
+
+1. Get your API key from [Roboflow](https://roboflow.com)
+2. Update the configuration in `index.html`:
+   ```javascript
+   window.ROBOFLOW_API_KEY = 'your_api_key_here';
+   window.ROBOFLOW_WORKSPACE = 'your_workspace_name';
+   window.ROBOFLOW_WORKFLOW = 'your_workflow_id';
+   ```
 
 ### Local Development
 
