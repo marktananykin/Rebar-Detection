@@ -24,7 +24,7 @@ class RebarDetector {
     this.resultTitle = document.getElementById('resultTitle');
     this.resultDescription = document.getElementById('resultDescription');
     this.confidenceFill = document.getElementById('confidenceFill');
-    this.confidenceText = document.getElementById('confidenceText');
+    this.confidencePercentage = document.getElementById('confidencePercentage');
     this.analyzeBtn = document.getElementById('analyzeBtn');
   }
 
@@ -347,7 +347,7 @@ class RebarDetector {
     this.resultTitle.textContent = 'Analyzing...';
     this.resultDescription.textContent = 'Please wait while we process your image.';
     this.confidenceFill.style.width = '0%';
-    this.confidenceText.textContent = '0%';
+    this.confidencePercentage.textContent = '0%';
   }
 
   showResult(result) {
@@ -366,7 +366,22 @@ class RebarDetector {
 
     // Animate confidence bar
     this.confidenceFill.style.width = `${result.confidence}%`;
-    this.confidenceText.textContent = `${result.confidence}%`;
+    this.confidencePercentage.textContent = `${result.confidence}%`;
+
+    // Update confidence bar color based on confidence level
+    this.updateConfidenceBarColor(result.confidence);
+  }
+
+  updateConfidenceBarColor(confidence) {
+    const confidenceFill = this.confidenceFill;
+
+    if (confidence >= 75) {
+      confidenceFill.style.backgroundColor = '#10b981'; // Green
+    } else if (confidence >= 50) {
+      confidenceFill.style.backgroundColor = '#f59e0b'; // Yellow/Orange
+    } else {
+      confidenceFill.style.backgroundColor = '#ef4444'; // Red
+    }
   }
 
   showError(message) {
@@ -376,7 +391,7 @@ class RebarDetector {
     this.resultTitle.textContent = 'Analysis Failed';
     this.resultDescription.textContent = message;
     this.confidenceFill.style.width = '0%';
-    this.confidenceText.textContent = '0%';
+    this.confidencePercentage.textContent = '0%';
   }
 }
 
